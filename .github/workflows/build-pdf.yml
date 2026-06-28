@@ -1,0 +1,89 @@
+name: Build Book PDF
+
+on:
+  # No path filter here: combining `paths` with `tags` can silently skip
+  # release builds, so any push to main or any `v*` tag always builds.
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+  # PRs are path-filtered to avoid spending CI on unrelated changes.
+  pull_request:
+    paths:
+      - "book/chapters/**"
+      - "book/references/images/**"
+      - "scripts/build_book_pdf.py"
+      - "requirements-pdf.txt"
+      - ".github/workflows/build-pdf.yml"
+  workflow_dispatch:
+
+# Allow the release job to create releases and upload assets.
+permissions:
+  contents: write
+
+concurrency:
+  group: build-pdf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build PDF
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-pdf.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-pdf.txt
+
+      # The build script renders via headless Chromium. The Myanmar fonts are
+      # required for correct text shaping; without them glyphs fall back to
+      # tofu boxes in the PDF.
+      - name: Install Myanmar fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends fonts-noto-core fonts-noto-unhinted
+          sudo fc-cache -f
+
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Build PDF
+        run: python scripts/build_book_pdf.py
+
+      - name: Upload PDF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentic-ai-free-guide-pdf
+          path: |
+            output/pdf/*.pdf
+            output/pdf/*.html
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Attach PDF to Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download PDF artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: agentic-ai-free-guide-pdf
+          path: dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.pdf
+          generate_release_notes: true
