@@ -47,12 +47,90 @@ def chapter_files(chapters_dir: Path) -> list[Path]:
     return files
 
 
-def read_title(path: Path) -> str:
+# Chapter markdown files use their filename slug as the H1 (e.g. "# 01-agentic-
+# ai-basics"). These would otherwise render as the visible chapter title and TOC
+# entry, so map each slug to the human title. Keep this in sync with the Table
+# Of Contents in README.md. The numeric prefix is intentionally omitted: the PDF
+# TOC is an ordered list that already numbers entries.
+CHAPTER_TITLES: dict[str, str] = {
+    "00-license": "License",
+    "00-preface": "Preface",
+    "00-thankyou_note": "Thank You Note",
+    "01-agentic-ai-basics": "Agentic AI Basics",
+    "02-agent-vs-workflow-vs-automation": "Agent vs Workflow vs Automation",
+    "03-llm-tool-calling-function-calling": "LLM Tool Calling / Function Calling",
+    "04-agent-loop": "Agent Loop",
+    "05-agent-harness": "Agent Harness",
+    "06-mcp-skill-subagent": "MCP, Skill, Subagent",
+    "07-context-engineering-memory-rag": "Context Engineering, Memory, RAG",
+    "08-planner-worker-verifier": "Planner, Worker, Verifier",
+    "09-tool-broker-permission-mutation-scope": "Tool Broker, Permission, Mutation Scope",
+    "10-observability-trajectory-reflection": "Observability, Trajectory, Reflection",
+    "11-safety-sandbox-prompt-injection-tool-output": "Safety, Sandbox, Prompt Injection, Tool Output",
+    "12-p2-zero-trust-multi-agent-bridge": "P-2 Zero-Trust Multi-Agent Bridge",
+    "13-travis2-controlled-runtime": "Travis-2 Controlled Runtime",
+    "14-browsersurfer-browser-tool-agent-security": "BrowserSurfer Browser Tool Agent Security",
+    "15-appv22-emerging-runtime-recovery-lab": "appv22 Emerging Runtime Recovery Lab",
+    "16-devops-agent-thinking": "DevOps Agent Thinking",
+    "17-mini-labs": "Mini Labs",
+    "18-myanmar-developer-roadmap": "Myanmar Developer Roadmap",
+    "19-references": "References",
+}
+
+# Acronyms / proper nouns to fix when prettifying an unmapped slug.
+TITLE_ACRONYMS = {
+    "ai": "AI", "llm": "LLM", "mcp": "MCP", "rag": "RAG", "api": "API",
+    "devops": "DevOps", "ui": "UI", "ci": "CI", "cd": "CD",
+}
+# Words kept lowercase mid-title.
+TITLE_SMALL_WORDS = {"vs", "and", "or", "the", "to", "of", "a", "an", "for", "in", "on", "with"}
+
+
+def prettify_slug(slug: str) -> str:
+    """Best-effort human title for a slug not present in CHAPTER_TITLES."""
+    stripped = re.sub(r"^\d+[-_]+", "", slug).replace("_", "-")
+    words = [w for w in stripped.split("-") if w]
+    out = []
+    for index, word in enumerate(words):
+        lower = word.lower()
+        if lower in TITLE_ACRONYMS:
+            out.append(TITLE_ACRONYMS[lower])
+        elif lower in TITLE_SMALL_WORDS and index != 0:
+            out.append(lower)
+        else:
+            out.append(word[:1].upper() + word[1:])
+    return " ".join(out) or slug
+
+
+def first_heading(path: Path) -> str | None:
     for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if stripped.startswith("# "):
             return stripped[2:].strip()
-    return path.stem
+    return None
+
+
+def read_title(path: Path) -> str:
+    stem = path.stem
+    if stem in CHAPTER_TITLES:
+        return CHAPTER_TITLES[stem]
+    heading = first_heading(path)
+    # Respect a real authored heading; only prettify when it's just the slug.
+    if heading and heading != stem:
+        return heading
+    return prettify_slug(stem)
+
+
+def normalize_chapter_heading(markdown_text: str, path: Path) -> str:
+    """Replace a leading slug H1 (e.g. "# 01-agentic-ai-basics") with the title."""
+    lines = markdown_text.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            if stripped[2:].strip() == path.stem:
+                lines[index] = f"# {read_title(path)}"
+            break
+    return "\n".join(lines)
 
 
 def to_file_uri(path: Path) -> str:
@@ -108,6 +186,7 @@ def build_html(files: list[Path]) -> tuple[str, list[Path]]:
     sections = []
     for index, path in enumerate(files, start=1):
         raw = path.read_text(encoding="utf-8")
+        raw = normalize_chapter_heading(raw, path)
         raw = rewrite_image_paths(raw, path.parent, missing_images)
         body = md_to_html(raw)
         title = html.escape(read_title(path))
