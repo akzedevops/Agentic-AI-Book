@@ -87,6 +87,7 @@ All links below point to existing manuscript files. Chapter prose is author-owne
 .
 ├── README.md
 ├── CONTRIBUTING.md
+├── RELEASING.md
 ├── ROADMAP.md
 ├── SECURITY.md
 ├── GLOSSARY.md
@@ -114,6 +115,7 @@ Useful file references:
 - [book/README.md](book/README.md)
 - [book/chapters/00-license.md](book/chapters/00-license.md)
 - [book/chapters/00-preface.md](book/chapters/00-preface.md)
+- [RELEASING.md](RELEASING.md) — how the PDF is built and released
 
 Repo-backed case study links:
 
